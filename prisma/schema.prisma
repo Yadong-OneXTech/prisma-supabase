@@ -1,0 +1,3677 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Customer {
+  id                 String  @id @db.Uuid
+  stripe_customer_id String?
+  users              User    @relation(fields: [id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("customer")
+}
+
+model Plan {
+  id          String   @id
+  active      Boolean?
+  name        String?
+  description String?
+  image       String?
+  metadata    Json?
+
+  prices Price[]
+
+  @@map("plan")
+}
+
+model Price {
+  id                String                 @id
+  plan_id           String?
+  active            Boolean?
+  unit_amount       BigInt?
+  currency          String?
+  type              pricing_type?
+  interval          pricing_plan_interval?
+  interval_count    Int?
+  trial_period_days Int?
+  metadata          Json?
+
+  // Relations
+  plans         Plan?          @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscriptions Subscription[]
+
+  @@map("price")
+}
+
+model Subscription {
+  id                   String               @id
+  user_id              String               @db.Uuid
+  status               subscription_status?
+  metadata             Json?
+  price_id             String?
+  quantity             Int?
+  cancel_at_period_end Boolean?
+  created              DateTime             @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  current_period_start DateTime             @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  current_period_end   DateTime             @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  ended_at             DateTime?            @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  cancel_at            DateTime?            @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  canceled_at          DateTime?            @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  trial_start          DateTime?            @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  trial_end            DateTime?            @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  prices               Price?               @relation(fields: [price_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                User                 @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("subscription")
+}
+
+// ===============================
+// Team Challenge
+// ===============================
+model TeamChallenge {
+  id         Int       @id @default(autoincrement())
+  title      String
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  type           TeamChallengeType
+  start_at       DateTime?         @default(now()) @db.Timestamptz
+  end_at         DateTime?         @default(now()) @db.Timestamptz
+  recurring_freq Float?
+  description    String?
+
+  // Scoring
+  target_point     Int? @default(0)
+  start_point      Int? @default(0)
+  min_qty          Int? @default(0)
+  min_total_value  Int? @default(0)
+  min_single_value Int? @default(0)
+  max_points       Int? @default(0)
+  penalty_per_tier Int? @default(0)
+  tier_size        Int? @default(0)
+
+  brand_id     Int?
+  brand        Brand?     @relation(fields: [brand_id], references: [id])
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  users TeamChallengeUser[]
+
+  @@map("team_challenge")
+}
+
+model TeamChallengeUser {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  points               Int       @default(0)
+  progress             Float     @default(0)
+  last_change_points   Int       @default(0)
+  last_change_progress Float     @default(0)
+  completed_at         DateTime? @db.Timestamptz
+  color                String?
+
+  // Relations
+  team_challenge_id Int
+  team_challenge    TeamChallenge @relation(fields: [team_challenge_id], references: [id], onDelete: Cascade)
+  user_id           String        @db.Uuid
+  user              User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  workspace         Workspace?    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id      Int?
+
+  @@id([team_challenge_id, user_id])
+  @@map("team_challenge_user")
+}
+
+enum TeamChallengeType {
+  meetings
+  quotation_qty
+  quotation_value
+  sales_order_qty
+  sales_order_value
+}
+
+// ===============================
+// User
+// ===============================
+model User {
+  id         String    @id @db.Uuid
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  department  String?
+
+  // Names
+  first_name String?
+  last_name  String?
+  full_name  String?
+
+  // Contact
+  email  String?
+  mobile String?
+
+  // Media
+  avatar_src String?
+  avatar_alt String?
+
+  billing_address Json?
+  payment_method  Json?
+  module_config   Json?
+  customers       Customer?
+  subscriptions   Subscription[]
+
+  // Relations
+  role_id            Int?
+  role               Role?           @relation(fields: [role_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+
+  quotations                     Quotation[]
+  sales_orders                   SalesOrder[]
+  purchase_orders                PurchaseOrder[]
+  invoices                       Invoice[]
+  supplier_invoices              SupplierInvoice[]
+  debit_notes                    DebitNote[]
+  goods_return_notes             GoodsReturnNote[]
+  loan_forms                     LoanForm[]
+  order_forms                    OrderForm[]
+  supplier_discount_forms        SupplierDiscountForm[]
+  assignee_credit_notes          CreditNote[]                 @relation("AssigneeCreditNotes")
+  user_credit_notes              CreditNote[]                 @relation("UserCreditNotes")
+  assignee_progressive_claims    ProgressiveClaim[]           @relation("AssigneeProgressiveClaims")
+  user_progressive_claims        ProgressiveClaim[]           @relation("UserProgressiveClaims")
+  assignee_delivery_orders       DeliveryOrder[]              @relation("AssigneeDeliveryOrders")
+  driver_delivery_orders         DeliveryOrder[]              @relation("DriverDeliveryOrders")
+  assignee_memos                 Memo[]                       @relation("AssigneeMemos")
+  user_memos                     Memo[]                       @relation("UserMemos")
+  team_challenge_users           TeamChallengeUser[]
+  xero_tokens                    XeroToken[]
+  dashboard_section_order        DashboardSectionOrder?
+  contacts                       Contact[]
+  projects                       Project[]
+  warehouse_product_stock_alerts WarehouseProductStockAlert[]
+  goods_transfer_forms           GoodsTransferForm[]
+  workspace                      Workspace?                   @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id                   Int?
+  admin_workspace                Workspace?                   @relation("AdminUser")
+
+  @@map("user")
+}
+
+// ===============================
+// Role
+// ===============================
+model Role {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title                                 String
+  slug                                  String
+  subtitle                              String?
+  type                                  RoleType
+  valid_subdirectory_pathnames          String[]
+  authentication_success_redirect_route String?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  permissions RolePermission[]
+  users       User[]
+
+  @@map("role")
+}
+
+model RolePermission {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  role_id       Int
+  role          Role       @relation(fields: [role_id], references: [id])
+  permission_id Int
+  permission    Permission @relation(fields: [permission_id], references: [id])
+
+  @@id([role_id, permission_id])
+  @@map("role_permission")
+}
+
+// ===============================
+// Permission
+// ===============================
+model Permission {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title    String  @unique
+  slug     String
+  subtitle String?
+
+  // Relations
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+// ===============================
+// Product
+// ===============================
+model Product {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Media
+  avatar_src String?
+  avatar_alt String?
+
+  // Codes
+  sku            String?
+  barcode        String?
+  hscode         String?
+  serial_number  String?
+  model_code     String?
+  model_sub_code String?
+  expired_at     DateTime? @db.Timestamptz
+
+  // Country
+  country_of_supply      String?
+  country_of_manufacture String?
+  country_of_origin      String?
+
+  // Attributes
+  width_mm  Int?
+  height_mm Int?
+  length_mm Int?
+  weight_kg Float?
+  color     String?
+
+  // Pricing
+  supplier_cost_amount Float?
+  retail_price         Float?
+
+  // Commmission
+  is_itemized_commission Boolean?
+  commission_rate        Float?
+  commission             Float?
+  is_commission_rate     Boolean?
+  is_new Boolean?
+
+  // Inventory
+  stock_count   Int?
+  restock_count Int?
+
+  // Relations
+  brand       Brand?    @relation(fields: [brand_id], references: [id])
+  brand_id    Int?
+  category    Category? @relation(fields: [category_id], references: [id])
+  category_id Int?
+
+  // Package
+  is_package Boolean?
+  package    Json?
+
+  is_expired_package_email_sent Boolean?
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  delivery_instructions_lines DeliveryInstructionLine[]
+  projects                    ProjectProduct[]
+  warehouses                  WarehouseProduct[]
+  quotation_lines             QuotationLine[]
+  sales_order_lines           SalesOrderLine[]
+  purchase_order_lines        PurchaseOrderLine[]
+  delivery_order_lines        DeliveryOrderLine[]
+  invoice_lines               InvoiceLine[]
+  supplier_invoice_lines      SupplierInvoiceLine[]
+  credit_note_lines           CreditNoteLine[]
+  debit_note_lines            DebitNoteLine[]
+  goods_return_note_lines     GoodsReturnNoteLine[]
+  loan_form_lines             LoanFormLine[]
+  order_form_lines            OrderFormLine[]
+  progressive_claim_lines     ProgressiveClaimLine[]
+
+  gallery_images                 ProductGalleryImage[]
+  spec_images                    ProductSpecImage[]
+  spec_files                     ProductSpecFile[]
+  marketplace_products           MarketplaceProduct[]
+  warehouse_product_stock_alerts WarehouseProductStockAlert[]
+  progressive_claim_extra_lines  ProgressiveClaimExtraLine[]
+  goods_transfer_form_lines      GoodsTransferFormLine[]
+  supplier_discount_form_lines   SupplierDiscountFormLine[]
+
+  @@unique([brand_id, model_code])
+  @@index([is_package])
+  @@index([model_code])
+  @@index([title])
+  @@map("product")
+}
+
+model MarketplaceProduct {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  type MarketplaceType
+
+  company_id Int
+  company    Company @relation(fields: [company_id], references: [id])
+  product_id Int
+  product    Product @relation(fields: [product_id], references: [id])
+
+  marketplace_product_id String
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("marketplace_product")
+}
+
+model MarketplaceSalesOrder {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  type MarketplaceType
+
+  company_id     Int
+  company        Company    @relation(fields: [company_id], references: [id])
+  sales_order_id Int        @unique
+  sales_order    SalesOrder @relation(fields: [sales_order_id], references: [id])
+
+  marketplace_sales_order_id String
+  reservations               Reservation[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("marketplace_sales_order")
+}
+
+model MarketplaceMessaging {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  type         MarketplaceType
+  unread_count Int             @default(0)
+
+  account_id Int
+  account    MarketplaceAccount @relation(fields: [account_id], references: [id])
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@unique([type, account_id])
+  @@map("marketplace_messaging")
+}
+
+model ProductGalleryImage {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  src        String
+  alt        String?
+  name       String?
+  size       Int?
+  type       String?
+  position   Float?
+  product_id Int
+  product    Product   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("product_gallery_image")
+}
+
+model ProductSpecImage {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  src        String
+  alt        String?
+  name       String?
+  size       Int?
+  type       String?
+  position   Float?
+  product_id Int
+  product    Product   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("product_spec_image")
+}
+
+model ProductSpecFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  src        String
+  alt        String?
+  name       String?
+  size       Int?
+  type       String?
+  position   Float?
+  product_id Int
+  product    Product   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("product_spec_file")
+}
+
+// ===============================
+// Brand
+// ===============================
+model Brand {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Details
+  code String?
+
+  // Pricing
+  discount_limit                                 Float?
+  margin_limit                                   Float?
+  coefficient_rate                               Float?
+  markup_rate                                    Float?
+  margin_rate                                    Float?
+  discount_rate                                  Float?
+  additional_discount_rate                       Float?
+  company_discount_rate                          Float?
+  costing_rate                                   Float?
+  is_roundup_to_nearest_dollar                   Boolean?
+  is_roundup_to_nearest_dollar_sales_person_cost Boolean?
+
+  // Relations
+  company            Company?         @relation(fields: [company_id], references: [id])
+  company_id         Int?
+  products           Product[]
+  currency_factor    CurrencyFactor?  @relation(fields: [currency_factor_id], references: [id])
+  currency_factor_id Currency?
+  projects           ProjectBrand[]
+  services           Service[]
+  company_brands     CompanyBrand[]
+  team_challenges    TeamChallenge[]
+  project_products   ProjectProduct[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@index([code])
+  @@map("brand")
+}
+
+// ===============================
+// Project
+// ===============================
+model Project {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // Media
+  avatar_src String?
+  avatar_alt String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  start_at DateTime? @db.Timestamptz
+  end_at   DateTime? @db.Timestamptz
+
+  blueprint3d Json?
+
+  // Hotel Details
+  location_name           String?
+  architects              String?
+  interior_designer       String?
+  no_of_units             Int?
+  estimated_delivery_date DateTime? @db.Timestamptz(6)
+
+  // Relations
+  brands                  ProjectBrand[]
+  products                ProjectProduct[]
+  currency_factors        ProjectCurrencyFactor[]
+  quotations              Quotation[]
+  sales_orders            SalesOrder[]
+  delivery_orders         DeliveryOrder[]
+  invoices                Invoice[]
+  supplier_invoices       SupplierInvoice[]
+  credit_notes            CreditNote[]
+  debit_notes             DebitNote[]
+  goods_return_notes      GoodsReturnNote[]
+  loan_forms              LoanForm[]
+  progressive_claims      ProgressiveClaim[]
+  memos                   Memo[]
+  supplier_discount_forms SupplierDiscountForm[]
+  order_forms             OrderForm[]
+  purchase_orders         PurchaseOrder[]
+
+  // BelongsTo Relations
+  project_category    ProjectCategory? @relation(fields: [project_category_id], references: [id])
+  project_category_id Int?
+  project_group       ProjectGroup?    @relation(fields: [project_group_id], references: [id])
+  project_group_id    Int?
+  company             Company?         @relation(fields: [company_id], references: [id])
+  company_id          Int?
+  assignee_id         String?          @db.Uuid
+  assignee            User?            @relation(fields: [assignee_id], references: [id])
+  project_files       ProjectFile[]
+  contact             Contact?         @relation(fields: [contact_id], references: [id])
+  contact_id          Int?
+
+  workspace             Workspace?            @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id          Int?
+  project_registrations ProjectRegistration[]
+
+  @@map("project")
+}
+
+model ProjectFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  src        String
+  alt        String?
+  name       String?
+  size       Int?
+  type       String?
+  position   Float?
+  project_id Int
+  project    Project   @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("project_file")
+}
+
+model ProjectCurrencyFactor {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  buy_rate Float
+
+  // Relations
+  project_id         Int
+  project            Project        @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  currency_factor_id Currency
+  currency_factor    CurrencyFactor @relation(fields: [currency_factor_id], references: [id], onDelete: Cascade)
+  project_brands     ProjectBrand[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@id([project_id, currency_factor_id])
+  @@map("project_currency_factor")
+}
+
+model ProjectBrand {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // Pricing
+  coefficient_rate             Float?
+  markup_rate                  Float?
+  margin_rate                  Float?
+  discount_rate                Float?
+  additional_discount_rate     Float?
+  company_discount_rate        Float?
+  handling_rate                Float?
+  is_roundup_to_nearest_dollar Boolean?
+
+  // Relations
+  project_id              Int
+  project                 Project               @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  brand_id                Int
+  brand                   Brand                 @relation(fields: [brand_id], references: [id], onDelete: Cascade)
+  currency_factor_id      Currency
+  currency_factor         CurrencyFactor        @relation(fields: [currency_factor_id], references: [id])
+  project_currency_factor ProjectCurrencyFactor @relation(fields: [project_id, currency_factor_id], references: [project_id, currency_factor_id])
+  project_products        ProjectProduct[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@id([project_id, brand_id])
+  @@map("project_brand")
+}
+
+model ProjectCategory {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Relations
+  projects Project[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("project_category")
+}
+
+model ProjectGroup {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Relations
+  projects           Project[]
+  progressive_claims ProgressiveClaim[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("project_group")
+}
+
+model ProjectProduct {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // Pricing
+  supplier_cost_amount         Float?
+  coefficient_rate             Float?
+  markup_rate                  Float?
+  margin_rate                  Float?
+  discount_rate                Float?
+  additional_discount_rate     Float?
+  company_discount_rate        Float?
+  handling_rate                Float?
+  is_roundup_to_nearest_dollar Boolean?
+
+  // Relations
+  project_id    Int
+  project       Project      @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  product_id    Int
+  product       Product      @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  brand_id      Int
+  brand         Brand        @relation(fields: [brand_id], references: [id], onDelete: Cascade)
+  project_brand ProjectBrand @relation(fields: [project_id, brand_id], references: [project_id, brand_id])
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@id([project_id, product_id])
+  @@map("project_product")
+}
+
+// ===============================
+// Currency Factor
+// ===============================
+model CurrencyFactor {
+  id         Currency  @id
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // Detail
+  title     String // SGD
+  slug      String
+  subtitle  String?
+  buy_rate  Float // 1.7
+  sell_rate Float
+
+  // Relations
+  brands                   Brand[]
+  project_currency_factors ProjectCurrencyFactor[]
+  project_brands           ProjectBrand[]
+  quotations               Quotation[]
+  purchase_orders          PurchaseOrder[]
+  users                    User[]
+  sales_orders             SalesOrder[]
+  invoices                 Invoice[]
+  supplier_invoices        SupplierInvoice[]
+  debit_notes              DebitNote[]
+  supplier_discount_forms  SupplierDiscountForm[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("currency_factor")
+}
+
+// ===============================
+// Category
+// ===============================
+model Category {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subcategory String?
+  description String?
+
+  // Relations
+  products Product[]
+  services Service[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("category")
+}
+
+// ===============================
+// Quotation
+// ===============================
+model Quotation {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  type        QuotationType @default(standard)
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Versioning
+  counter              Int?
+  version              Int?
+  last_sent_email_hash String?
+
+  // Payment
+  published_at  DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  currency_rate    Float?
+  subtotal         Float?
+  discount_rate    Float?
+  discount         Float?
+  is_discount_rate Boolean?
+  shipping         Float?
+  tax_rate         Float?
+  tax              Float?
+  total            Float?
+
+  // Relations
+  assignee_id        String?         @db.Uuid
+  assignee           User?           @relation(fields: [assignee_id], references: [id])
+  project_id         Int?
+  project            Project?        @relation(fields: [project_id], references: [id])
+  company_id         Int?
+  company            Company?        @relation(fields: [company_id], references: [id])
+  project_contact_id Int?
+  project_contact    Contact?        @relation(name: "ProjectContactQuotations", fields: [project_contact_id], references: [id])
+  contact_id         Int?
+  contact            Contact?        @relation(name: "ContactQuotations", fields: [contact_id], references: [id])
+  order_id           Int?
+  order              Order?          @relation(fields: [order_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+  workspace          Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id       Int?
+
+  lines                   QuotationLine[]
+  attachment_files        QuotationAttachmentFile[]
+  sales_orders            SalesOrder[]
+  rooms                   QuotationIronmongeryRoom[]
+  supplier_discount_forms SupplierDiscountForm[]
+
+  @@map("quotation")
+}
+
+model QuotationIronmongeryRoom {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  door_location String?
+  quantity      Int?
+  width         Int?
+  thickness     Int?
+  height        Int?
+  door          String?
+  door_type     String
+  door_material String
+  door_hardware String
+
+  // Relations
+  quotation_id Int
+  quotation    Quotation @relation(fields: [quotation_id], references: [id], onDelete: Cascade)
+
+  lines QuotationLine[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("quotation_ironmongery_room")
+}
+
+model QuotationLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String? // TODO: Deprecate this
+  slug        String? // TODO: Deprecate this
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code           String?
+  discount_rate           Float?
+  requested_discount_rate Float?
+  discount                Json?
+  note                    String?
+
+  // Calculations
+  quantity          Int
+  retail_price      Float
+  unit_price        Float
+  total             Float?
+  sales_person_cost Float?
+
+  // Relations
+  quotation_id Int
+  quotation    Quotation                 @relation(fields: [quotation_id], references: [id], onDelete: Cascade)
+  product_id   Int?
+  product      Product?                  @relation(fields: [product_id], references: [id], onDelete: SetNull)
+  room_id      Int?
+  room         QuotationIronmongeryRoom? @relation(fields: [room_id], references: [id], onDelete: SetNull)
+  workspace    Workspace?                @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  product_details Json?
+
+  @@map("quotation_line")
+}
+
+model QuotationAttachmentFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  src      String
+  alt      String?
+  name     String?
+  size     Int?
+  type     String?
+  position Float?
+
+  // Relations
+  quotation_id Int
+  quotation    Quotation  @relation(fields: [quotation_id], references: [id], onDelete: Cascade)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("quotation_attachment_file")
+}
+
+// ===============================
+// Order
+// ===============================
+model Order {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  quotations Quotation[]
+
+  @@map("order")
+}
+
+// ===============================
+// Sales Order
+// ===============================
+model SalesOrder {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+  remarks        String?
+
+  // Payment
+  published_at  DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  currency_rate    Float?
+  subtotal         Float?
+  discount_rate    Float?
+  discount         Float?
+  is_discount_rate Boolean?
+  shipping         Float?
+  tax_rate         Float?
+  tax              Float?
+  total            Float?
+  performance_bond Float?
+  retention_fee    Float?
+
+  // Relations
+  assignee_id        String?         @db.Uuid
+  assignee           User?           @relation(fields: [assignee_id], references: [id])
+  project_id         Int?
+  project            Project?        @relation(fields: [project_id], references: [id])
+  company_id         Int?
+  company            Company?        @relation(fields: [company_id], references: [id])
+  project_contact_id Int?
+  project_contact    Contact?        @relation(name: "ProjectContactSalesOrders", fields: [project_contact_id], references: [id])
+  contact_id         Int?
+  contact            Contact?        @relation(name: "ContactSalesOrders", fields: [contact_id], references: [id])
+  quotation_id       Int?
+  quotation          Quotation?      @relation(fields: [quotation_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+  workspace          Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id       Int?
+
+  lines                   SalesOrderLine[]
+  invoices                Invoice[]
+  delivery_orders         DeliveryOrder[]
+  order_forms             OrderForm[]
+  marketplace_sales_order MarketplaceSalesOrder?
+  attachment_files        SalesOrderAttachmentFile[]
+
+  @@map("sales_order")
+}
+
+model SalesOrderLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+  discount_rate Float?
+  discount      Json?
+  note          String?
+
+  // Calculations
+  quantity          Int
+  retail_price      Float
+  unit_price        Float
+  total             Float?
+  sales_person_cost Float?
+
+  // Relations
+  sales_order_id Int
+  sales_order    SalesOrder @relation(fields: [sales_order_id], references: [id], onDelete: Cascade)
+  product_id     Int
+  product        Product    @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  workspace      Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id   Int?
+
+  product_details               Json?
+  progressive_claim_lines       ProgressiveClaimLine[]
+  progressive_claim_extra_lines ProgressiveClaimExtraLine[]
+  inventories                   Inventory[]
+
+  @@map("sales_order_line")
+}
+
+model SalesOrderAttachmentFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  src      String
+  alt      String?
+  name     String?
+  size     Int?
+  type     String?
+  position Float?
+
+  // Relations
+  sales_order_id Int
+  sales_order    SalesOrder @relation(fields: [sales_order_id], references: [id], onDelete: Cascade)
+  workspace      Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id   Int?
+
+  @@map("sales_order_attachment_file")
+}
+
+model MarketplaceAccount {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  type MarketplaceType
+
+  company_id Int
+  company    Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  marketplace_account_id String
+  messaging              MarketplaceMessaging[]
+  marketplace_tokens     MarketplaceToken[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@unique([company_id, type])
+  @@map("marketplace_account")
+}
+
+// ===============================
+// Purchase Order
+// ===============================
+model PurchaseOrder {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Shipping
+  ship_via     String?
+  ready_at     DateTime? @db.Timestamptz
+  shipped_at   DateTime? @db.Timestamptz
+  arrived_at   DateTime? @db.Timestamptz
+  completed_at DateTime? @db.Timestamptz
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Pricing
+  currency_rate    Float?
+  subtotal         Float?
+  discount_rate    Float?
+  discount         Float?
+  is_discount_rate Boolean?
+  shipping         Float?
+  tax_rate         Float?
+  tax              Float?
+  total            Float?
+
+  // Relations
+  project_id         Int?
+  project            Project?        @relation(fields: [project_id], references: [id], onDelete: SetNull)
+  assignee_id        String?         @db.Uuid
+  assignee           User?           @relation(fields: [assignee_id], references: [id])
+  company_id         Int?
+  company            Company?        @relation(fields: [company_id], references: [id])
+  project_contact_id Int?
+  project_contact    Contact?        @relation(name: "ProjectContactPurchaseOrders", fields: [project_contact_id], references: [id])
+  contact_id         Int?
+  contact            Contact?        @relation(name: "ContactPurchaseOrders", fields: [contact_id], references: [id])
+  warehouse_id       Int?
+  warehouse          Warehouse?      @relation(fields: [warehouse_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+  workspace          Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id       Int?
+
+  lines PurchaseOrderLine[]
+
+  @@map("purchase_order")
+}
+
+model PurchaseOrderLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title             String?
+  slug              String?
+  subtitle          String?
+  description       String?
+  shelving_location String?
+  row_number        String?
+
+  // Others
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float
+
+  // Relations
+  workspace              Workspace?            @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id           Int?
+  purchase_order_id      Int
+  purchase_order         PurchaseOrder         @relation(fields: [purchase_order_id], references: [id], onDelete: Cascade)
+  product_id             Int?
+  product                Product?              @relation(fields: [product_id], references: [id], onDelete: SetNull)
+  order_form_line_id     Int?                  @unique
+  order_form_line        OrderFormLine?        @relation(fields: [order_form_line_id], references: [id])
+  reservations           Reservation[]
+  inventories            Inventory[]
+  supplier_invoice_lines SupplierInvoiceLine[]
+
+  @@map("purchase_order_line")
+}
+
+// ===============================
+// Delivery Order
+// ===============================
+model DeliveryOrder {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  delivery_at DateTime? @db.Timestamptz
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Payment
+  published_at  DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax           Float?
+  total         Float?
+
+  // Driver
+  driver_name    String?
+  driver_contact String?
+  vehicle_number String?
+
+  // Delivery
+  delivered_on     DateTime? @db.Timestamptz
+  received_by      String?
+  customer_contact String?
+  signature_url    String?
+
+  // Relations
+  assignee_id            String?            @db.Uuid
+  assignee               User?              @relation(name: "AssigneeDeliveryOrders", fields: [assignee_id], references: [id])
+  driver_id              String?            @db.Uuid
+  driver                 User?              @relation(name: "DriverDeliveryOrders", fields: [driver_id], references: [id])
+  project_id             Int?
+  project                Project?           @relation(fields: [project_id], references: [id])
+  company_id             Int?
+  company                Company?           @relation(fields: [company_id], references: [id])
+  contact_id             Int?
+  contact                Contact?           @relation(fields: [contact_id], references: [id])
+  sales_order_id         Int?
+  sales_order            SalesOrder?        @relation(fields: [sales_order_id], references: [id], onDelete: Cascade)
+  loan_form_id           Int?
+  loan_form              LoanForm?          @relation(fields: [loan_form_id], references: [id], onDelete: Cascade)
+  goods_return_note_id   Int?
+  goods_return_note      GoodsReturnNote?   @relation(fields: [goods_return_note_id], references: [id], onDelete: Cascade)
+  goods_transfer_form_id Int?
+  goods_transfer_form    GoodsTransferForm? @relation(fields: [goods_transfer_form_id], references: [id], onDelete: Cascade)
+  workspace              Workspace?         @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id           Int?
+
+  delivery_instructions DeliveryInstruction[]
+  lines                 DeliveryOrderLine[]
+  attachment_files      DeliveryOrderAttachmentFile[]
+
+  @@map("delivery_order")
+}
+
+model DeliveryOrderLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity           Int
+  delivered_quantity Int?
+  unit_price         Float?
+
+  // Delivery
+  reason String?
+  remark String?
+
+  // Relations
+  delivery_order_id Int
+  delivery_order    DeliveryOrder @relation(fields: [delivery_order_id], references: [id], onDelete: Cascade)
+  product_id        Int
+  product           Product       @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  workspace         Workspace?    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id      Int?
+
+  @@map("delivery_order_line")
+}
+
+model DeliveryOrderAttachmentFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  src      String
+  alt      String?
+  name     String?
+  size     Int?
+  type     String?
+  position Float?
+
+  // Relations
+  delivery_order_id Int
+  delivery          DeliveryOrder @relation(fields: [delivery_order_id], references: [id], onDelete: Cascade)
+  workspace         Workspace?    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id      Int?
+
+  @@map("delivery_order_attachment_file")
+}
+
+// ===============================
+// Delivery Instruction
+// ===============================
+model DeliveryInstruction {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Others
+  pick_up_at DateTime? @db.Timestamptz
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Relations
+  delivery_order_id Int?
+  delivery_order    DeliveryOrder? @relation(fields: [delivery_order_id], references: [id], onDelete: Cascade)
+  warehouse_id      Int
+  warehouse         Warehouse      @relation(fields: [warehouse_id], references: [id])
+  workspace         Workspace?     @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id      Int?
+
+  lines DeliveryInstructionLine[]
+
+  @@map("delivery_instruction")
+}
+
+model DeliveryInstructionLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  quantity        Int
+  packed_quantity Int?
+  note            String?
+
+  // Relations
+  delivery_instruction_id Int
+  delivery_instruction    DeliveryInstruction @relation(fields: [delivery_instruction_id], references: [id], onDelete: Cascade)
+  product_id              Int
+  product                 Product             @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  workspace               Workspace?          @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id            Int?
+
+  @@map("delivery_instruction_line")
+}
+
+// ===============================
+// Invoice
+// ===============================
+model Invoice {
+  id             Int       @id @default(autoincrement())
+  created_at     DateTime? @default(now()) @db.Timestamptz
+  updated_at     DateTime? @default(now()) @db.Timestamptz
+  created_by     String?   @db.Uuid
+  updated_by     String?   @db.Uuid
+  status         String?
+  payment_status String?
+  type           String
+  counter        Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+  shipping_method              ShippingMethod?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Payment
+  invoice_at    DateTime? @default(now()) @db.Timestamptz
+  due_at        DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  currency_rate Float?
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax_rate      Float?
+  tax           Float?
+  total         Float?
+
+  // Mutable
+  is_mutable Boolean? @default(true)
+
+  // Relations
+  assignee_id        String?         @db.Uuid
+  assignee           User?           @relation(fields: [assignee_id], references: [id])
+  project_id         Int?
+  project            Project?        @relation(fields: [project_id], references: [id])
+  company_id         Int?
+  company            Company?        @relation(fields: [company_id], references: [id])
+  contact_id         Int?
+  contact            Contact?        @relation(fields: [contact_id], references: [id])
+  sales_order_id     Int?
+  sales_order        SalesOrder?     @relation(fields: [sales_order_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+  workspace          Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id       Int?
+
+  lines              InvoiceLine[]
+  payments           InvoicePayment[]
+  credit_notes       CreditNote[]
+  goods_return_notes GoodsReturnNote[]
+
+  @@map("invoice")
+}
+
+model InvoiceLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float?
+  subtotal   Float?
+  total      Float?
+
+  // Relations
+  invoice_id   Int
+  invoice      Invoice    @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  product_id   Int?
+  product      Product?   @relation(fields: [product_id], references: [id], onDelete: SetNull)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  credit_note_lines       CreditNoteLine[]
+  goods_return_note_lines GoodsReturnNoteLine[]
+
+  @@map("invoice_line")
+}
+
+model InvoicePayment {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // General
+  amount   Float
+  currency String
+  rate     Float?   @default(1)
+  type     String
+  paid_at  DateTime @db.Timestamptz
+  paid_to  String
+  note     String?
+
+  // Relations
+  invoice_id   Int
+  invoice      Invoice    @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("invoice_payment")
+}
+
+// ===============================
+// Supplier Invoice
+// ===============================
+model SupplierInvoice {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Billing Address
+  billing_address_line_1      String?
+  billing_address_line_2      String?
+  billing_address_postal_code String?
+  billing_address_city        String?
+  billing_address_country     String?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Payment
+  reference String?
+  due_at    DateTime? @default(now()) @db.Timestamptz
+
+  // Pricing
+  currency_rate Float?
+  subtotal      Float?
+  tax           Float?
+  total         Float?
+
+  // Relations
+  assignee_id        String?         @db.Uuid
+  assignee           User?           @relation(fields: [assignee_id], references: [id])
+  project_id         Int?
+  project            Project?        @relation(fields: [project_id], references: [id])
+  company_id         Int?
+  company            Company?        @relation(fields: [company_id], references: [id])
+  contact_id         Int?
+  contact            Contact?        @relation(fields: [contact_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+  workspace          Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id       Int?
+
+  lines                             SupplierInvoiceLine[]
+  payments                          SupplierInvoicePayment[]
+  debit_notes                       DebitNote[]
+  supplier_invoice_attachment_files SupplierInvoiceAttachmentFile[]
+
+  @@map("supplier_invoice")
+}
+
+model SupplierInvoiceAttachmentFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  src      String
+  alt      String?
+  name     String?
+  size     Int?
+  type     String?
+  position Float?
+
+  // Relations
+  supplier_invoice_id Int
+  supplier_invoice    SupplierInvoice @relation(fields: [supplier_invoice_id], references: [id], onDelete: Cascade)
+  workspace           Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id        Int?
+
+  @@map("supplier_invoice_attachment_file")
+}
+
+model SupplierInvoiceLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float
+
+  // Relations
+  supplier_invoice_id    Int
+  supplier_invoice       SupplierInvoice   @relation(fields: [supplier_invoice_id], references: [id], onDelete: Cascade)
+  product_id             Int
+  product                Product           @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  purchase_order_line_id Int
+  purchase_order_line    PurchaseOrderLine @relation(fields: [purchase_order_line_id], references: [id])
+  workspace              Workspace?        @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id           Int?
+
+  @@map("supplier_invoice_line")
+}
+
+model SupplierInvoicePayment {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // General
+  amount   Float
+  currency String
+  rate     Float?   @default(1)
+  type     String
+  paid_at  DateTime @db.Timestamptz
+  paid_to  String
+  note     String?
+
+  // Relations
+  workspace           Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id        Int?
+  supplier_invoice_id Int
+  supplier_invoice    SupplierInvoice @relation(fields: [supplier_invoice_id], references: [id], onDelete: Cascade)
+
+  @@map("supplier_invoice_payment")
+}
+
+// ===============================
+// Credit Note
+// ===============================
+model CreditNote {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Billing Address
+  billing_address_line_1      String?
+  billing_address_line_2      String?
+  billing_address_postal_code String?
+  billing_address_city        String?
+  billing_address_country     String?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Others
+  published_at DateTime? @default(now()) @db.Timestamptz
+
+  // Pricing
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax_rate      Float?
+  tax           Float?
+  total         Float?
+
+  // Relations
+  assignee_id  String?    @db.Uuid
+  assignee     User?      @relation(name: "AssigneeCreditNotes", fields: [assignee_id], references: [id])
+  project_id   Int?
+  project      Project?   @relation(fields: [project_id], references: [id])
+  company_id   Int?
+  company      Company?   @relation(fields: [company_id], references: [id])
+  contact_id   Int?
+  contact      Contact?   @relation(fields: [contact_id], references: [id])
+  user_id      String?    @db.Uuid
+  user         User?      @relation(name: "UserCreditNotes", fields: [user_id], references: [id])
+  invoice_id   Int
+  invoice      Invoice    @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  lines CreditNoteLine[]
+
+  @@map("credit_note")
+}
+
+model CreditNoteLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float
+
+  // Relations
+  credit_note_id  Int
+  credit_note     CreditNote   @relation(fields: [credit_note_id], references: [id], onDelete: Cascade)
+  product_id      Int?
+  product         Product?     @relation(fields: [product_id], references: [id], onDelete: SetNull)
+  invoice_line_id Int?
+  invoice_line    InvoiceLine? @relation(fields: [invoice_line_id], references: [id])
+  workspace       Workspace?   @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id    Int?
+
+  @@map("credit_note_line")
+}
+
+// ===============================
+// Debit Note
+// ===============================
+model DebitNote {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Payment
+  published_at  DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  currency_rate Float?
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax_rate      Float?
+  tax           Float?
+  total         Float?
+
+  // Relations
+  assignee_id         String?          @db.Uuid
+  assignee            User?            @relation(fields: [assignee_id], references: [id])
+  project_id          Int?
+  project             Project?         @relation(fields: [project_id], references: [id])
+  company_id          Int?
+  company             Company?         @relation(fields: [company_id], references: [id])
+  contact_id          Int?
+  contact             Contact?         @relation(fields: [contact_id], references: [id])
+  supplier_invoice_id Int?
+  supplier_invoice    SupplierInvoice? @relation(fields: [supplier_invoice_id], references: [id], onDelete: Cascade)
+  currency_factor_id  Currency?
+  currency_factor     CurrencyFactor?  @relation(fields: [currency_factor_id], references: [id])
+  workspace           Workspace?       @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id        Int?
+
+  lines                       DebitNoteLine[]
+  debit_note_attachment_files DebitNoteAttachmentFile[]
+
+  @@map("debit_note")
+}
+
+model DebitNoteAttachmentFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  src      String
+  alt      String?
+  name     String?
+  size     Int?
+  type     String?
+  position Float?
+
+  // Relations
+  workspace     Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id  Int?
+  debit_note_id Int
+  debit_note    DebitNote  @relation(fields: [debit_note_id], references: [id], onDelete: Cascade)
+
+  @@map("debit_note_attachment_file")
+}
+
+model DebitNoteLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float
+
+  // Relations
+  workspace     Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id  Int?
+  debit_note_id Int
+  debit_note    DebitNote  @relation(fields: [debit_note_id], references: [id], onDelete: Cascade)
+  product_id    Int
+  product       Product    @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("debit_note_line")
+}
+
+// ===============================
+// Goods Return Note
+// ===============================
+model GoodsReturnNote {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Payment
+  published_at  DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax           Float?
+  total         Float?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  assignee_id  String?    @db.Uuid
+  assignee     User?      @relation(fields: [assignee_id], references: [id])
+  project_id   Int?
+  project      Project?   @relation(fields: [project_id], references: [id])
+  company_id   Int?
+  company      Company?   @relation(fields: [company_id], references: [id])
+  contact_id   Int?
+  contact      Contact?   @relation(fields: [contact_id], references: [id])
+  invoice_id   Int?
+  invoice      Invoice?   @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  warehouse_id Int?
+  warehouse    Warehouse? @relation(fields: [warehouse_id], references: [id], onDelete: Cascade)
+
+  lines           GoodsReturnNoteLine[]
+  delivery_orders DeliveryOrder[]
+
+  @@map("goods_return_note")
+}
+
+model GoodsReturnNoteLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Others
+  discount_rate Float?
+  note          String?
+  location_code String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float?
+
+  // Relations
+  workspace            Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id         Int?
+  goods_return_note_id Int
+  goods_return_note    GoodsReturnNote @relation(fields: [goods_return_note_id], references: [id], onDelete: Cascade)
+  invoice_line_id      Int?
+  invoice_line         InvoiceLine?    @relation(fields: [invoice_line_id], references: [id])
+  product_id           Int
+  product              Product         @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  inventories Inventory[]
+
+  @@map("goods_return_note_line")
+}
+
+// ===============================
+// Loan Form
+// ===============================
+model LoanForm {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  due_at      DateTime? @default(now()) @db.Timestamptz
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+  extra_contact_info                          Json?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Payment
+  published_at  DateTime? @default(now()) @db.Timestamptz
+  terms         String?
+  payment_terms String?
+
+  // Pricing
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax           Float?
+  total         Float?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  assignee_id  String?    @db.Uuid
+  assignee     User?      @relation(fields: [assignee_id], references: [id])
+  project_id   Int?
+  project      Project?   @relation(fields: [project_id], references: [id])
+  company_id   Int?
+  company      Company?   @relation(fields: [company_id], references: [id])
+  contact_id   Int?
+  contact      Contact?   @relation(fields: [contact_id], references: [id])
+
+  lines           LoanFormLine[]
+  delivery_orders DeliveryOrder[]
+
+  @@map("loan_form")
+}
+
+model LoanFormLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title             String?
+  slug              String?
+  subtitle          String?
+  description       String?
+  shelving_location String?
+  row_number        String?
+
+  // Others
+  discount_rate Float?
+  note          String?
+
+  // Calculations
+  quantity   Int
+  unit_price Float
+
+  // Relations
+  workspace    Workspace?  @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  loan_form_id Int
+  loan_form    LoanForm    @relation(fields: [loan_form_id], references: [id], onDelete: Cascade)
+  product_id   Int
+  product      Product     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  warehouse_id Int
+  warehouse    Warehouse   @relation(fields: [warehouse_id], references: [id], onDelete: Cascade)
+  inventories  Inventory[]
+
+  @@map("loan_form_line")
+}
+
+// ===============================
+// Goods Transfer Form
+// ===============================
+model GoodsTransferForm {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  transfer_at DateTime? @default(now()) @db.Timestamptz
+
+  // Relations
+  workspace           Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id        Int?
+  assignee_id         String?    @db.Uuid
+  assignee            User?      @relation(fields: [assignee_id], references: [id])
+  contact_id          Int?
+  contact             Contact?   @relation(fields: [contact_id], references: [id])
+  source_warehouse_id Int?
+  source_warehouse    Warehouse? @relation("GoodsTransferFormSourceWarehouse", fields: [source_warehouse_id], references: [id], onDelete: Cascade)
+  target_warehouse_id Int?
+  target_warehouse    Warehouse? @relation("GoodsTransferFormTargetWarehouse", fields: [target_warehouse_id], references: [id], onDelete: Cascade)
+
+  lines           GoodsTransferFormLine[]
+  delivery_orders DeliveryOrder[]
+
+  @@map("goods_transfer_form")
+}
+
+model GoodsTransferFormLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  quantity Int?
+
+  product_id Int
+  product    Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  workspace              Workspace?        @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id           Int?
+  goods_transfer_form_id Int
+  goods_transfer_form    GoodsTransferForm @relation(fields: [goods_transfer_form_id], references: [id])
+  inventories            Inventory[]
+  reservation            Reservation?
+
+  @@map("goods_transfer_form_line")
+}
+
+// ===============================
+// Feedback
+// ===============================
+model Feedback {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("feedback")
+}
+
+// ===============================
+// Company
+// ===============================
+model Company {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  type        String? // Supplier | Customer
+
+  // Media
+  avatar_src String?
+  avatar_alt String?
+
+  // Profile
+  email   String?
+  mobile  String?
+  phone   String?
+  fax     String?
+  website String?
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+
+  // Files
+  documents String?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  contacts           Contact[]
+  brands             Brand[]
+  quotations         Quotation[]
+  sales_orders       SalesOrder[]
+  purchase_orders    PurchaseOrder[]
+  delivery_orders    DeliveryOrder[]
+  invoices           Invoice[]
+  supplier_invoices  SupplierInvoice[]
+  credit_notes       CreditNote[]
+  debit_notes        DebitNote[]
+  goods_return_notes GoodsReturnNote[]
+  loan_forms         LoanForm[]
+  order_forms        OrderForm[]
+  progressive_claims ProgressiveClaim[]
+  company_brands     CompanyBrand[]
+
+  company_files            CompanyFile[]
+  marketplace_accounts     MarketplaceAccount[]
+  marketplace_products     MarketplaceProduct[]
+  marketplace_tokens       MarketplaceToken[]
+  marketplace_sales_orders MarketplaceSalesOrder[]
+  projects                 Project[]
+  todos                    Todo[]
+  memos                    Memo[]
+  supplier_discount_forms  SupplierDiscountForm[]
+  project_registrations    ProjectRegistration[]
+
+  @@map("company")
+}
+
+model CompanyFile {
+  id           Int        @id @default(autoincrement())
+  created_at   DateTime?  @default(now()) @db.Timestamptz
+  updated_at   DateTime?  @default(now()) @db.Timestamptz
+  created_by   String?    @db.Uuid
+  updated_by   String?    @db.Uuid
+  status       String?
+  src          String
+  alt          String?
+  name         String?
+  size         Int?
+  type         String?
+  position     Float?
+  company_id   Int
+  company      Company    @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("company_file")
+}
+
+model CompanyBrand {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  company_id Int
+  company    Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  brand_id   Int
+  brand      Brand   @relation(fields: [brand_id], references: [id], onDelete: Cascade)
+
+  // Pricing
+  coefficient_rate             Float?
+  markup_rate                  Float?
+  margin_rate                  Float?
+  discount_rate                Float?
+  additional_discount_rate     Float?
+  company_discount_rate        Float?
+  handling_rate                Float?
+  is_roundup_to_nearest_dollar Boolean?
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@id([company_id, brand_id])
+  @@map("company_brand")
+}
+
+// ===============================
+// Contact
+// ===============================
+model Contact {
+  id         Int            @id @default(autoincrement())
+  created_at DateTime?      @default(now()) @db.Timestamptz
+  updated_at DateTime?      @default(now()) @db.Timestamptz
+  created_by String?        @db.Uuid
+  updated_by String?        @db.Uuid
+  status     ContactStatus?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  avatar_src  String?
+  avatar_alt  String?
+  lead_status String?
+
+  // Names
+  first_name String?
+  last_name  String?
+  full_name  String?
+  salutation String?
+
+  // Contact
+  email   String?
+  mobile  String?
+  phone   String?
+  fax     String?
+  website String?
+
+  // Shipping Address
+  shipping_address_line_1      String?
+  shipping_address_line_2      String?
+  shipping_address_postal_code String?
+  shipping_address_city        String?
+  shipping_address_country     String?
+
+  // Billing Address
+  billing_address_line_1                      String?
+  billing_address_line_2                      String?
+  billing_address_postal_code                 String?
+  billing_address_city                        String?
+  billing_address_country                     String?
+  is_billing_address_same_as_shipping_address Boolean?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  company      Company?   @relation(fields: [company_id], references: [id])
+  company_id   Int?
+  assignee_id  String?    @db.Uuid
+  assignee     User?      @relation(fields: [assignee_id], references: [id])
+
+  purchase_orders         PurchaseOrder[]        @relation("ContactPurchaseOrders")
+  project_purchase_orders PurchaseOrder[]        @relation("ProjectContactPurchaseOrders")
+  delivery_orders         DeliveryOrder[]
+  invoices                Invoice[]
+  supplier_invoices       SupplierInvoice[]
+  credit_notes            CreditNote[]
+  debit_notes             DebitNote[]
+  goods_return_notes      GoodsReturnNote[]
+  loan_forms              LoanForm[]
+  progressive_claims      ProgressiveClaim[]
+  memos                   Memo[]
+  todos                   Todo[]
+  contact_files           ContactFile[]
+  projects                Project[]
+  services                Service[]
+  goods_transfer_forms    GoodsTransferForm[]
+  supplier_discount_forms SupplierDiscountForm[]
+  quotations              Quotation[]            @relation("ContactQuotations")
+  project_quotations      Quotation[]            @relation("ProjectContactQuotations")
+  sales_orders            SalesOrder[]           @relation("ContactSalesOrders")
+  project_sales_orders    SalesOrder[]           @relation("ProjectContactSalesOrders")
+
+  @@map("contact")
+}
+
+model ContactFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  src        String
+  alt        String?
+  name       String?
+  size       Int?
+  type       String?
+  position   Float?
+  contact_id Int
+  contact    Contact   @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("contact_file")
+}
+
+model Memo {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // General
+  title    String?
+  content  String?
+  priority String?
+  lat      String?
+  lng      String?
+  location String?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  contact_id   Int?
+  contact      Contact?   @relation(fields: [contact_id], references: [id])
+  company_id   Int?
+  company      Company?   @relation(fields: [company_id], references: [id])
+  project_id   Int?
+  project      Project?   @relation(fields: [project_id], references: [id])
+  user_id      String?    @db.Uuid
+  user         User?      @relation("UserMemos", fields: [user_id], references: [id])
+  assignee_id  String?    @db.Uuid
+  assignee     User?      @relation("AssigneeMemos", fields: [assignee_id], references: [id])
+
+  @@map("memo")
+}
+
+model Todo {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // General
+  content String
+  is_done Boolean? @default(false)
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  contact_id   Int?
+  contact      Contact?   @relation(fields: [contact_id], references: [id])
+  company_id   Int?
+  company      Company?   @relation(fields: [company_id], references: [id])
+
+  @@map("todo")
+}
+
+// ===============================
+// Warehouse
+// ===============================
+model Warehouse {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Location
+  address_line_1      String?
+  address_line_2      String?
+  address_postal_code String?
+  address_city        String?
+  address_country     String?
+
+  // Relations
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  delivery_instructions          DeliveryInstruction[]
+  products                       WarehouseProduct[]
+  purchase_orders                PurchaseOrder[]
+  loan_form_lines                LoanFormLine[]
+  goods_return_notes             GoodsReturnNote[]
+  warehouse_product_stock_alerts WarehouseProductStockAlert[]
+  source_goods_transfer_forms    GoodsTransferForm[]          @relation("GoodsTransferFormSourceWarehouse")
+  target_goods_transfer_forms    GoodsTransferForm[]          @relation("GoodsTransferFormTargetWarehouse")
+
+  @@map("warehouse")
+}
+
+model WarehouseProduct {
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  min_stock_balance Int?
+
+  warehouse_id Int
+  warehouse    Warehouse     @relation(fields: [warehouse_id], references: [id])
+  product_id   Int
+  product      Product       @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  inventories  Inventory[]
+  revervations Reservation[]
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@id([warehouse_id, product_id])
+  @@map("warehouse_product")
+}
+
+model WarehouseProductStockAlert {
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  min_stock_balance Int?
+
+  creator      User?     @relation(fields: [created_by], references: [id])
+  warehouse_id Int
+  warehouse    Warehouse @relation(fields: [warehouse_id], references: [id])
+  product_id   Int
+  product      Product   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@id([warehouse_id, product_id])
+  @@map("warehouse_product_stock_alert")
+}
+
+// ===============================
+// Inventory
+// ===============================
+model Inventory {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  in     Int     @default(0)
+  out    Int     @default(0)
+  ref_no String?
+
+  workspace                   Workspace?             @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id                Int?
+  warehouse_id                Int
+  product_id                  Int
+  sales_order_line_id         Int?
+  sales_order_line            SalesOrderLine?        @relation(fields: [sales_order_line_id], references: [id], onDelete: SetNull)
+  warehouse_product           WarehouseProduct       @relation(fields: [warehouse_id, product_id], references: [warehouse_id, product_id], onDelete: Cascade)
+  purchase_order_line_id      Int?
+  purchase_order_line         PurchaseOrderLine?     @relation(fields: [purchase_order_line_id], references: [id], onDelete: SetNull)
+  loan_form_line_id           Int?
+  loan_form_line              LoanFormLine?          @relation(fields: [loan_form_line_id], references: [id], onDelete: SetNull)
+  goods_return_note_line_id   Int?
+  goods_return_note_line      GoodsReturnNoteLine?   @relation(fields: [goods_return_note_line_id], references: [id], onDelete: SetNull)
+  goods_transfer_form_line_id Int?
+  goods_transfer_form_line    GoodsTransferFormLine? @relation(fields: [goods_transfer_form_line_id], references: [id], onDelete: SetNull)
+
+  @@unique([loan_form_line_id])
+  @@map("inventory")
+}
+
+// ===============================
+// Reservation
+// ===============================
+model Reservation {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  in  Int @default(0)
+  out Int @default(0)
+
+  workspace                   Workspace?             @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id                Int?
+  warehouse_id                Int
+  product_id                  Int
+  warehouse_product           WarehouseProduct       @relation(fields: [warehouse_id, product_id], references: [warehouse_id, product_id], onDelete: Cascade)
+  order_form_line_id          Int?
+  order_form_line             OrderFormLine?         @relation(fields: [order_form_line_id], references: [id], onDelete: Cascade)
+  marketplace_sales_order_id  Int?
+  marketplace_sales_order     MarketplaceSalesOrder? @relation(fields: [marketplace_sales_order_id], references: [id])
+  purchase_order_line_id      Int?
+  purchase_order_line         PurchaseOrderLine?     @relation(fields: [purchase_order_line_id], references: [id])
+  goods_transfer_form_line_id Int?                   @unique
+  goods_transfer_form_line    GoodsTransferFormLine? @relation(fields: [goods_transfer_form_line_id], references: [id])
+
+  @@map("reservation")
+}
+
+// ===============================
+// Service
+// ===============================
+model Service {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  model_code   String?
+  amount       Float?
+  service_date DateTime? @default(now()) @db.Timestamptz
+
+  // Relations
+  brand        Brand?     @relation(fields: [brand_id], references: [id])
+  brand_id     Int?
+  category     Category?  @relation(fields: [category_id], references: [id])
+  category_id  Int?
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  contact    Contact? @relation(fields: [contact_id], references: [id])
+  contact_id Int?
+
+  @@map("service")
+}
+
+// ===============================
+// Order Form
+// ===============================
+model OrderForm {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  counter    Int?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  due_at      DateTime? @default(now()) @db.Timestamptz
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Relations
+  project_id     Int?
+  project        Project?    @relation(fields: [project_id], references: [id], onDelete: SetNull)
+  workspace      Workspace?  @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id   Int?
+  assignee_id    String?     @db.Uuid
+  assignee       User?       @relation(fields: [assignee_id], references: [id])
+  company_id     Int?
+  company        Company?    @relation(fields: [company_id], references: [id])
+  sales_order_id Int?
+  sales_order    SalesOrder? @relation(fields: [sales_order_id], references: [id], onDelete: Cascade)
+
+  lines OrderFormLine[]
+
+  @@map("order_form")
+}
+
+model OrderFormLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  note     String?
+  quantity Int
+
+  // Relations
+  workspace           Workspace?         @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id        Int?
+  order_form_id       Int?
+  order_form          OrderForm?         @relation(fields: [order_form_id], references: [id], onDelete: Cascade)
+  product_id          Int?
+  product             Product?           @relation(fields: [product_id], references: [id], onDelete: SetNull)
+  purchase_order_line PurchaseOrderLine?
+  reservations        Reservation[]
+
+  @@map("order_form_line")
+}
+
+// ===============================
+// Progressive Claim
+// ===============================
+model ProgressiveClaim {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  claim_at    DateTime? @default(now()) @db.Timestamptz
+
+  // Billing Address
+  billing_address_line_1      String?
+  billing_address_line_2      String?
+  billing_address_postal_code String?
+  billing_address_city        String?
+  billing_address_country     String?
+
+  // Notes
+  external_notes String?
+  internal_notes String?
+
+  // Versioning
+  counter Int?
+
+  // Pricing
+  subtotal      Float?
+  discount_rate Float?
+  shipping      Float?
+  tax           Float?
+  tax_rate      Float?
+  total         Float?
+
+  // Relations
+  workspace        Workspace?    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id     Int?
+  assignee_id      String?       @db.Uuid
+  assignee         User?         @relation(name: "AssigneeProgressiveClaims", fields: [assignee_id], references: [id])
+  project_id       Int?
+  project          Project?      @relation(fields: [project_id], references: [id])
+  project_group_id Int?
+  project_group    ProjectGroup? @relation(fields: [project_group_id], references: [id])
+  company_id       Int?
+  company          Company?      @relation(fields: [company_id], references: [id])
+  contact_id       Int?
+  contact          Contact?      @relation(fields: [contact_id], references: [id])
+  user_id          String?       @db.Uuid
+  user             User?         @relation(name: "UserProgressiveClaims", fields: [user_id], references: [id])
+
+  lines            ProgressiveClaimLine[]
+  attachment_files ProgressiveClaimAttachmentFile[]
+
+  @@map("progressive_claim")
+}
+
+model ProgressiveClaimLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+
+  // Calculations
+  quantity          Int
+  approved_quantity Int?  @default(0)
+  unit_price        Float
+
+  // Relations
+  workspace            Workspace?       @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id         Int?
+  progressive_claim_id Int
+  progressive_claim    ProgressiveClaim @relation(fields: [progressive_claim_id], references: [id], onDelete: Cascade)
+  sales_order_line_id  Int
+  sales_order_line     SalesOrderLine   @relation(fields: [sales_order_line_id], references: [id], onDelete: Cascade)
+  product_id           Int
+  product              Product          @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("progressive_claim_line")
+}
+
+model ProgressiveClaimExtraLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+
+  // Calculations
+  quantity          Int
+  approved_quantity Int?  @default(0)
+  unit_price        Float
+
+  // Relations
+  workspace           Workspace?     @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id        Int?
+  sales_order_line_id Int
+  sales_order_line    SalesOrderLine @relation(fields: [sales_order_line_id], references: [id], onDelete: Cascade)
+  product_id          Int
+  product             Product        @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("progressive_claim_extra_line")
+}
+
+model ProgressiveClaimAttachmentFile {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  src      String
+  alt      String?
+  name     String?
+  size     Int?
+  type     String?
+  position Float?
+
+  // Relations
+  workspace            Workspace?       @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id         Int?
+  progressive_claim_id Int
+  progressive_claim    ProgressiveClaim @relation(fields: [progressive_claim_id], references: [id], onDelete: Cascade)
+
+  @@map("progressive_claim_attachment_file")
+}
+
+model Receipt {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  cart_items     Json?
+  subtotal       Float?
+  tax            Float?
+  total          Float?
+  payment_method String?
+  paid           Float?
+  customer       Json?
+
+  src String?
+
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("receipt")
+}
+
+model XeroToken {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  token String
+
+  // Relations
+  user_id      String     @db.Uuid
+  user         User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@map("xero_token")
+}
+
+model MarketplaceToken {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  refresh_token String
+  access_token  String
+  expires_in    Int
+  type          MarketplaceType
+  app_type      MarketplaceAppType @default(general)
+
+  // Relations
+  company_id   Int
+  company      Company            @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  workspace    Workspace?         @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  account_id   Int
+  account      MarketplaceAccount @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("marketplace_token")
+}
+
+model DashboardSectionOrder {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  sales_tab_order       String?
+  finance_tab_order     String?
+  procurement_tab_order String?
+
+  user_id      String     @db.Uuid
+  user         User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  workspace    Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+
+  @@unique([user_id])
+  @@map("dashboard_section_order")
+}
+
+model Tier {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  title    String
+  slug     String
+  subtitle String?
+
+  size Int
+
+  features   TierFeature[]
+  workspaces Workspace[]
+
+  @@map("tier")
+}
+
+model TierFeature {
+  id         Int       @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  tier_id    Int
+  feature_id Int
+
+  feature Feature @relation(fields: [feature_id], references: [id])
+  tier    Tier    @relation(fields: [tier_id], references: [id])
+
+  @@id([id, tier_id, feature_id])
+  @@unique([id, tier_id, feature_id])
+  @@map("tier_feature")
+}
+
+model Feature {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  status   String?
+  title    String
+  slug     String
+  subtitle String?
+
+  tiers TierFeature[]
+
+  @@map("feature")
+}
+
+model Workspace {
+  id          Int       @id @default(autoincrement())
+  created_at  DateTime? @default(now()) @db.Timestamptz
+  updated_at  DateTime? @default(now()) @db.Timestamptz
+  created_by  String?   @db.Uuid
+  updated_by  String?   @db.Uuid
+  is_active   Boolean?  @default(true)
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  avatar_src  String?
+  avatar_alt  String?
+
+  // Workspace settings
+  primary_color   String?
+  secondary_color String?
+  custom_domain   String?
+  logo_svg_src    String?
+  logo_svg_alt    String?
+  favicon_ico_src String?
+  favicon_ico_alt String?
+  support_mobile  String?
+  support_email   String?
+
+  // Relations
+  user_id String? @db.Uuid
+  user    User?   @relation("AdminUser", fields: [user_id], references: [id], onDelete: SetNull)
+
+  users                              User[]
+  team_challenges                    TeamChallenge[]
+  roles                              Role[]
+  products                           Product[]
+  marketplace_products               MarketplaceProduct[]
+  marketplace_sales_orders           MarketplaceSalesOrder[]
+  marketplace_messagings             MarketplaceMessaging[]
+  brands                             Brand[]
+  projects                           Project[]
+  project_categories                 ProjectCategory[]
+  project_groups                     ProjectGroup[]
+  currency_factors                   CurrencyFactor[]
+  categories                         Category[]
+  quotations                         Quotation[]
+  orders                             Order[]
+  sales_orders                       SalesOrder[]
+  marketplace_accounts               MarketplaceAccount[]
+  purchase_orders                    PurchaseOrder[]
+  delivery_orders                    DeliveryOrder[]
+  delivery_instructions              DeliveryInstruction[]
+  invoices                           Invoice[]
+  team_challenge_users               TeamChallengeUser[]
+  product_gallery_images             ProductGalleryImage[]
+  product_spec_images                ProductSpecImage[]
+  product_spec_files                 ProductSpecFile[]
+  project_files                      ProjectFile[]
+  project_currency_factors           ProjectCurrencyFactor[]
+  project_brands                     ProjectBrand[]
+  project_products                   ProjectProduct[]
+  quotation_ironmongery_rooms        QuotationIronmongeryRoom[]
+  quotation_lines                    QuotationLine[]
+  quotation_attachment_files         QuotationAttachmentFile[]
+  sales_order_lines                  SalesOrderLine[]
+  sales_order_attachment_files       SalesOrderAttachmentFile[]
+  purchase_order_lines               PurchaseOrderLine[]
+  delivery_order_lines               DeliveryOrderLine[]
+  delivery_order_attachment_files    DeliveryOrderAttachmentFile[]
+  delivery_instruction_lines         DeliveryInstructionLine[]
+  invoice_lines                      InvoiceLine[]
+  invoice_payments                   InvoicePayment[]
+  supplier_invoices                  SupplierInvoice[]
+  supplier_invoice_lines             SupplierInvoiceLine[]
+  supplier_invoice_payments          SupplierInvoicePayment[]
+  credit_notes                       CreditNote[]
+  credit_note_lines                  CreditNoteLine[]
+  debit_notes                        DebitNote[]
+  debit_note_attachment_files        DebitNoteAttachmentFile[]
+  debit_note_lines                   DebitNoteLine[]
+  goods_return_notes                 GoodsReturnNote[]
+  goods_return_note_lines            GoodsReturnNoteLine[]
+  loan_forms                         LoanForm[]
+  loan_form_lines                    LoanFormLine[]
+  goods_transfer_forms               GoodsTransferForm[]
+  goods_transfer_form_lines          GoodsTransferFormLine[]
+  feedbacks                          Feedback[]
+  companies                          Company[]
+  company_files                      CompanyFile[]
+  company_brands                     CompanyBrand[]
+  contacts                           Contact[]
+  contact_files                      ContactFile[]
+  memos                              Memo[]
+  todos                              Todo[]
+  warehouses                         Warehouse[]
+  warehouse_products                 WarehouseProduct[]
+  warehouse_product_stock_alerts     WarehouseProductStockAlert[]
+  inventories                        Inventory[]
+  reservations                       Reservation[]
+  services                           Service[]
+  order_forms                        OrderForm[]
+  order_form_lines                   OrderFormLine[]
+  progressive_claims                 ProgressiveClaim[]
+  progressive_claim_lines            ProgressiveClaimLine[]
+  progressive_claim_extra_lines      ProgressiveClaimExtraLine[]
+  progressive_claim_attachment_files ProgressiveClaimAttachmentFile[]
+  receipts                           Receipt[]
+  xero_tokens                        XeroToken[]
+  marketplace_tokens                 MarketplaceToken[]
+  dashboard_section_orders           DashboardSectionOrder[]
+
+  tier_id                          Int?
+  tier                             Tier?                           @relation(fields: [tier_id], references: [id], onDelete: SetNull)
+  supplier_invoice_attachmentFiles SupplierInvoiceAttachmentFile[]
+  one_drive_accounts               OneDriveAccount[]
+  one_drive_tokens                 OneDriveToken[]
+
+  @@unique([user_id])
+  @@map("workspace")
+}
+
+// ===============================
+// Project Registration
+// ===============================
+model ProjectRegistration {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+  status      String?
+
+  // Project Details
+  developer_detail String?
+
+  // Relations
+  project_id Int?
+  project    Project? @relation(fields: [project_id], references: [id])
+  company_id Int?
+  company    Company? @relation(fields: [company_id], references: [id])
+
+  @@map("project_registration")
+}
+
+// ===============================
+// Supplier Discount Form
+// ===============================
+model SupplierDiscountForm {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+
+  // General
+  title       String
+  slug        String
+  subtitle    String?
+  description String?
+
+  // Discount
+  discount_type String
+  discount_rate String
+
+  // Versioning
+  counter              Int?
+  version              Int?
+  last_sent_email_hash String?
+
+  published_at DateTime? @default(now()) @db.Timestamptz(6)
+  submitted_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  assignee_id        String?         @db.Uuid
+  assignee           User?           @relation(fields: [assignee_id], references: [id])
+  project_id         Int?
+  project            Project?        @relation(fields: [project_id], references: [id])
+  company_id         Int?
+  company            Company?        @relation(fields: [company_id], references: [id])
+  contact_id         Int?
+  contact            Contact?        @relation(fields: [contact_id], references: [id])
+  currency_factor_id Currency?
+  currency_factor    CurrencyFactor? @relation(fields: [currency_factor_id], references: [id])
+  quotation_id       Int?
+  quotation          Quotation?      @relation(fields: [quotation_id], references: [id])
+
+  lines SupplierDiscountFormLine[]
+
+  @@map("supplier_discount_form")
+}
+
+model SupplierDiscountFormLine {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  status     String?
+  position   Int?
+
+  // General
+  title       String?
+  slug        String?
+  subtitle    String?
+  description String?
+
+  // Others
+  location_code String?
+
+  // Discount Rates
+  // New - Lump Sum
+  standard_discount_rate             Float?
+  additional_discount_rate           Float?
+  // New - Itemized
+  special_unit_rate                  Float?
+  // Counter - Lump Sum
+  requested_discount_rate            Float?
+  requested_additional_discount_rate Float?
+  counter_discount_rate              Float?
+  additional_counter_discount_rate   Float?
+  // Counter - Itemized
+  requested_special_unit_rate        Float?
+  counter_special_unit_rate          Float?
+
+  // Calculations
+  quantity          Int
+  retail_price      Float
+  unit_price        Float
+  total             Float?
+  sales_person_cost Float?
+
+  // Relations
+  supplier_discount_form_id Int
+  supplier_discount_form    SupplierDiscountForm @relation(fields: [supplier_discount_form_id], references: [id], onDelete: Cascade)
+  product_id                Int?
+  product                   Product?             @relation(fields: [product_id], references: [id], onDelete: SetNull)
+
+  @@map("supplier_discount_form_line")
+}
+
+model OneDriveAccount {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  drive_id   String
+  drive_type String
+
+  workspace    Workspace?     @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  token        OneDriveToken?
+
+  @@unique([updated_by])
+  @@map("one_drive_account")
+}
+
+model OneDriveToken {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime? @default(now()) @db.Timestamptz
+  updated_at DateTime? @default(now()) @db.Timestamptz
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+
+  refresh_token  String
+  access_token   String
+  expires_in     Int
+  ext_expires_in Int
+  token_type     String
+  scope          String
+
+  // Relations
+  workspace    Workspace?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  workspace_id Int?
+  account_id   Int
+  account      OneDriveAccount @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id])
+  @@map("one_drive_token")
+}
+
+enum pricing_plan_interval {
+  day
+  week
+  month
+  year
+}
+
+enum pricing_type {
+  one_time
+  recurring
+}
+
+enum subscription_status {
+  trialing
+  active
+  canceled
+  incomplete
+  incomplete_expired
+  past_due
+  unpaid
+}
+
+enum ContactStatus {
+  Active
+  Inactive
+}
+
+enum MarketplaceType {
+  shopee
+  lazada
+  amazon
+}
+
+enum MarketplaceAppType {
+  general
+  iam
+}
+
+enum RoleType {
+  warehouse_staff
+  driver
+  salesperson
+  admin
+  procurement_officer
+  sales_manager
+  finance_manager
+  accounts
+}
+
+enum ShippingMethod {
+  air_freight
+  air_freight_courier
+  trucking
+}
+
+enum QuotationType {
+  standard
+  ironmongery
+}
+
+enum Currency {
+  ARS
+  AUD
+  BHD
+  BBD
+  BRL
+  GBP
+  CAD
+  XAF
+  CLP
+  CNY
+  CYP
+  CZK
+  DKK
+  XCD
+  EGP
+  EEK
+  EUR
+  HKD
+  HUF
+  ISK
+  INR
+  IDR
+  ILS
+  JMD
+  JPY
+  JOD
+  KES
+  LVL
+  LBP
+  LTL
+  MYR
+  MXN
+  MAD
+  NAD
+  NPR
+  NZD
+  NOK
+  OMR
+  PKR
+  PAB
+  PHP
+  PLN
+  QAR
+  RON
+  RUB
+  SAR
+  SGD
+  ZAR
+  KRW
+  LKR
+  SEK
+  CHF
+  THB
+  TRY
+  AED
+  USD
+  VEF
+  XOF
+}
